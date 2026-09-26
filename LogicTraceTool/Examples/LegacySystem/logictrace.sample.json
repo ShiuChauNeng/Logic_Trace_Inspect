@@ -1,0 +1,133 @@
+{
+  "schemaVersion": "2.0",
+  "feature": {
+    "name": "取消訂單",
+    "purpose": "讓使用者取消尚未完成且具備權限的訂單，保留稽核紀錄後更新操作畫面。",
+    "overview": {
+      "text": "使用者送出取消要求後，系統先取得取消要求並驗證訂單，再更新訂單狀態、儲存資料與寫入取消紀錄，最後重新整理畫面。",
+      "references": [
+        { "text": "取得取消要求", "targetType": "LogicSection", "targetId": "S001" },
+        { "text": "驗證訂單", "targetType": "LogicSection", "targetId": "S002" },
+        { "text": "更新訂單狀態", "targetType": "Rule", "targetId": "R004" },
+        { "text": "儲存資料", "targetType": "LogicSection", "targetId": "S004" },
+        { "text": "寫入取消紀錄", "targetType": "Evidence", "targetId": "E007" },
+        { "text": "重新整理畫面", "targetType": "LogicSection", "targetId": "S005" }
+      ]
+    },
+    "entryPoint": {
+      "filePath": "Forms/OrderForm.cs",
+      "className": "OrderForm",
+      "methodName": "btnCancel_Click"
+    },
+    "mainFlow": ["取得取消要求", "驗證訂單", "執行取消", "儲存資料", "更新畫面"],
+    "components": ["OrderForm", "OrderService", "OrderRepository", "CancellationAudit"],
+    "metrics": {
+      "analysisCoverage": 87.0,
+      "evidenceLocCoverage": 81.0,
+      "totalEffectiveLoc": 53,
+      "unresolvedWeight": 13.0
+    }
+  },
+  "logicSections": [
+    {
+      "id": "S001",
+      "sequence": 1,
+      "title": "取得取消要求",
+      "description": "從畫面取得使用者選取的訂單，將訂單與目前使用者識別碼交給服務層。",
+      "metrics": { "logicWeight": 8.0, "codeShare": 11.0, "coverage": 100.0, "effectiveLoc": 6 },
+      "rules": [
+        {
+          "id": "R001", "sequence": 1, "title": "以選取訂單啟動取消", "description": "取消流程使用目前畫面選取的訂單識別碼。",
+          "category": "Input", "evidenceLevel": "Observed", "confidence": "High", "analysisStatus": "Confirmed", "verificationStatus": "Unverified",
+          "evidences": [
+            { "id": "E001", "filePath": "Forms/OrderForm.cs", "className": "OrderForm", "methodName": "btnCancel_Click", "startLine": 9, "endLine": 14, "reason": "事件處理器取得選取的訂單並呼叫取消服務。" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S002",
+      "sequence": 2,
+      "title": "驗證訂單",
+      "description": "確認訂單存在、目前狀態允許取消，且操作使用者具備權限。",
+      "metrics": { "logicWeight": 25.0, "codeShare": 32.0, "coverage": 100.0, "effectiveLoc": 17 },
+      "rules": [
+        {
+          "id": "R002", "sequence": 1, "title": "訂單必須存在且狀態允許取消", "description": "不存在、已出貨或已完成的訂單不得取消。",
+          "category": "Validation", "evidenceLevel": "Observed", "confidence": "High", "analysisStatus": "Confirmed", "verificationStatus": "Unverified",
+          "evidences": [
+            { "id": "E002", "filePath": "Services/OrderService.cs", "className": "OrderService", "methodName": "Cancel", "startLine": 12, "endLine": 18, "reason": "程式直接檢查訂單是否存在以及不可取消的狀態。" },
+            { "id": "E003", "filePath": "Data/OrderRepository.cs", "className": "OrderRepository", "methodName": "Find", "startLine": 12, "endLine": 12, "reason": "Repository 以訂單識別碼查找實體，找不到時回傳 null。" }
+          ]
+        },
+        {
+          "id": "R003", "sequence": 2, "title": "使用者必須具備取消權限", "description": "訂單擁有者或系統管理者可以取消訂單。",
+          "category": "Authorization", "evidenceLevel": "Observed", "confidence": "High", "analysisStatus": "Confirmed", "verificationStatus": "NeedsReview",
+          "evidences": [
+            { "id": "E004", "filePath": "Services/OrderService.cs", "className": "OrderService", "methodName": "Cancel / CanCancel", "startLine": 19, "endLine": 31, "reason": "取消前進行權限判斷，並明確定義擁有者與管理者條件。" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S003",
+      "sequence": 3,
+      "title": "執行取消",
+      "description": "將通過驗證的訂單改為已取消並記錄時間。",
+      "metrics": { "logicWeight": 30.0, "codeShare": 17.0, "coverage": 90.0, "effectiveLoc": 9 },
+      "rules": [
+        {
+          "id": "R004", "sequence": 1, "title": "更新訂單狀態", "description": "取消時將狀態設為 Cancelled 並使用 UTC 紀錄取消時間。",
+          "category": "StateChange", "evidenceLevel": "Observed", "confidence": "High", "analysisStatus": "Confirmed", "verificationStatus": "Unverified",
+          "evidences": [
+            { "id": "E005", "filePath": "Services/OrderService.cs", "className": "OrderService", "methodName": "Cancel", "startLine": 23, "endLine": 24, "reason": "這兩行直接更新訂單狀態與取消時間。" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S004",
+      "sequence": 4,
+      "title": "儲存資料",
+      "description": "儲存訂單狀態並留下取消稽核紀錄。",
+      "metrics": { "logicWeight": 27.0, "codeShare": 32.0, "coverage": 65.0, "effectiveLoc": 17 },
+      "rules": [
+        {
+          "id": "R005", "sequence": 1, "title": "持久化訂單變更", "description": "服務層要求 Repository 儲存已變更的訂單。",
+          "category": "Persistence", "evidenceLevel": "Inferred", "confidence": "Medium", "analysisStatus": "NeedsInvestigation", "verificationStatus": "Unverified",
+          "evidences": [
+            { "id": "E006", "filePath": "Services/OrderService.cs", "className": "OrderService", "methodName": "Cancel", "startLine": 25, "endLine": 25, "reason": "服務層呼叫 Repository.Update；實際持久化機制仍待確認。" }
+          ]
+        },
+        {
+          "id": "R006", "sequence": 2, "title": "寫入取消紀錄", "description": "每次成功取消都寫入訂單、使用者與 UTC 時間。",
+          "category": "Audit", "evidenceLevel": "Observed", "confidence": "High", "analysisStatus": "Confirmed", "verificationStatus": "Verified",
+          "evidences": [
+            { "id": "E007", "filePath": "Services/CancellationAudit.cs", "className": "CancellationAudit", "methodName": "Write", "startLine": 7, "endLine": 11, "reason": "稽核元件建立含訂單、使用者與時間的紀錄。" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S005",
+      "sequence": 5,
+      "title": "更新畫面",
+      "description": "取消成功後重新取得訂單清單並刷新畫面。",
+      "metrics": { "logicWeight": 10.0, "codeShare": 8.0, "coverage": 100.0, "effectiveLoc": 4 },
+      "rules": [
+        {
+          "id": "R007", "sequence": 1, "title": "重新整理訂單清單", "description": "服務完成後才重新載入資料並刷新 Grid。",
+          "category": "UI", "evidenceLevel": "Observed", "confidence": "High", "analysisStatus": "Confirmed", "verificationStatus": "Unverified",
+          "evidences": [
+            { "id": "E008", "filePath": "Forms/OrderForm.cs", "className": "OrderForm", "methodName": "RefreshOrderList", "startLine": 12, "endLine": 20, "reason": "事件處理完成後呼叫 RefreshOrderList，重新繫結並刷新 Grid。" }
+          ]
+        }
+      ]
+    }
+  ],
+  "unresolvedItems": [
+    { "id": "U001", "title": "Repository Implementation 無法確認", "reason": "範例只呈現服務層契約，實際持久化與交易行為仍待確認。", "estimatedWeight": 7.0, "relatedSectionId": "S004" },
+    { "id": "U002", "title": "外部通知整合未盤點", "reason": "正式系統可能透過外部元件寄送取消通知。", "estimatedWeight": 4.0, "relatedSectionId": "S004" },
+    { "id": "U003", "title": "例外復原路徑未確認", "reason": "儲存或稽核失敗時的復原策略尚未取得。", "estimatedWeight": 2.0, "relatedSectionId": "S003" }
+  ]
+}
