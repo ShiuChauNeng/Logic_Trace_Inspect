@@ -4,6 +4,9 @@ namespace LogicTrace;
 
 public sealed class MainForm : Form
 {
+    private const int InlineEvidenceCardDefaultHeight = 420;
+    private const int InlineEvidenceCardMinimumHeight = 240;
+    private const int InlineEvidenceResizeGripHeight = 12;
     private readonly LogicTraceDocumentService _documentService = new();
     private readonly TreeView _tree = new() { Dock = DockStyle.Fill, HideSelection = false };
     private readonly Panel _content = new() { Dock = DockStyle.Fill, AutoScroll = true, BackColor = Color.White };
@@ -166,6 +169,14 @@ public sealed class MainForm : Form
         var repeatedEvidenceWidth = inlineEvidence.Controls.OfType<TableLayoutPanel>().First().Width;
         if (repeatedEvidenceWidth != evidenceWidth)
             throw new InvalidOperationException($"重複點擊 Overview Link 導致 Evidence 寬度改變：{evidenceWidth} → {repeatedEvidenceWidth}。");
+        var resizableCard = inlineEvidence.Controls.OfType<TableLayoutPanel>().First();
+        if (resizableCard.Height < InlineEvidenceCardDefaultHeight || !Descendants(resizableCard).Any(control => control.Cursor == Cursors.SizeNS))
+            throw new InvalidOperationException("Overview Evidence 未建立可調整高度的拖曳把手。");
+        var hostHeight = inlineEvidence.Height;
+        resizableCard.Height += 100;
+        ResizeInlineEvidenceHost(inlineEvidence);
+        if (inlineEvidence.Height <= hostHeight)
+            throw new InvalidOperationException("調整 Evidence 高度後，外層區域未同步更新。");
         foreach (var reference in _document.Feature.Overview.References)
         {
             if (!_targetNodes.TryGetValue(Key(reference.TargetType, reference.TargetId), out var node))
@@ -437,7 +448,6 @@ public sealed class MainForm : Form
         {
             foreach (var item in items) host.Controls.Add(BuildInlineEvidenceCard(item.Context, item.Evidence));
         }
-        host.Height = 58 + (items.Count == 0 ? 44 : items.Count * 278);
         var contentWidth = Math.Max(300, host.ClientSize.Width);
         foreach (Control child in host.Controls)
         {
@@ -445,7 +455,7 @@ public sealed class MainForm : Form
         }
         host.Visible = true;
         host.ResumeLayout(true);
-        host.Parent?.PerformLayout();
+        ResizeInlineEvidenceHost(host);
     }
 
     private Control BuildInlineEvidenceCard(string context, Evidence evidence)
@@ -453,8 +463,9 @@ public sealed class MainForm : Form
         var card = new TableLayoutPanel
         {
             ColumnCount = 2,
-            RowCount = 4,
-            Height = 270,
+            RowCount = 5,
+            Height = InlineEvidenceCardDefaultHeight,
+            MinimumSize = new Size(0, InlineEvidenceCardMinimumHeight),
             BackColor = Color.FromArgb(249, 250, 252),
             CellBorderStyle = TableLayoutPanelCellBorderStyle.Single,
             Padding = new Padding(12, 8, 12, 8),
@@ -466,6 +477,7 @@ public sealed class MainForm : Form
         card.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));
         card.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
         card.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        card.RowStyles.Add(new RowStyle(SizeType.Absolute, InlineEvidenceResizeGripHeight));
         card.Controls.Add(new Label { Text = $"{context}  ·  {evidence.Id}", Dock = DockStyle.Fill, Font = new Font("Segoe UI", 10F, FontStyle.Bold), ForeColor = Color.FromArgb(35, 61, 91), TextAlign = ContentAlignment.MiddleLeft }, 0, 0);
         var open = new Button { Text = "完整檢視", AutoSize = true, Dock = DockStyle.Fill, Margin = Padding.Empty };
         open.Click += (_, _) =>
@@ -480,7 +492,57 @@ public sealed class MainForm : Form
         var source = BuildInlineSourceViewer(evidence);
         card.Controls.Add(source, 0, 3);
         card.SetColumnSpan(source, 2);
+        var resizeGrip = BuildInlineEvidenceResizeGrip(card);
+        card.Controls.Add(resizeGrip, 0, 4);
+        card.SetColumnSpan(resizeGrip, 2);
         return card;
+    }
+
+    private static Control BuildInlineEvidenceResizeGrip(Control card)
+    {
+        var grip = new Panel
+        {
+            Dock = DockStyle.Fill,
+            Cursor = Cursors.SizeNS,
+            BackColor = Color.FromArgb(235, 238, 242),
+            Margin = Padding.Empty,
+            AccessibleName = "調整 Evidence 高度",
+            AccessibleDescription = "上下拖曳以調整程式碼顯示區域高度"
+        };
+        grip.Paint += (_, e) =>
+        {
+            var center = grip.ClientSize.Width / 2;
+            using var pen = new Pen(Color.FromArgb(145, 153, 164));
+            e.Graphics.DrawLine(pen, center - 18, 4, center + 18, 4);
+            e.Graphics.DrawLine(pen, center - 18, 7, center + 18, 7);
+        };
+
+        var dragStartY = 0;
+        var dragStartHeight = 0;
+        grip.MouseDown += (_, e) =>
+        {
+            if (e.Button != MouseButtons.Left) return;
+            dragStartY = Cursor.Position.Y;
+            dragStartHeight = card.Height;
+            grip.Capture = true;
+        };
+        grip.MouseMove += (_, _) =>
+        {
+            if (!grip.Capture) return;
+            var height = Math.Max(InlineEvidenceCardMinimumHeight, dragStartHeight + Cursor.Position.Y - dragStartY);
+            if (height == card.Height) return;
+            card.Height = height;
+            if (card.Parent is FlowLayoutPanel host) ResizeInlineEvidenceHost(host);
+        };
+        grip.MouseUp += (_, _) => grip.Capture = false;
+        return grip;
+    }
+
+    private static void ResizeInlineEvidenceHost(FlowLayoutPanel host)
+    {
+        host.PerformLayout();
+        host.Height = host.Controls.Cast<Control>().Sum(control => control.Height + control.Margin.Vertical);
+        host.Parent?.PerformLayout();
     }
 
     private Control BuildInlineSourceViewer(Evidence evidence)
